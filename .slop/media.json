@@ -1,4 +1,5 @@
 {
+  "icon": "icon.png",
   "thumbnail": "screenshots/gunner.png",
   "gallery": [
     { "image": "screenshots/gunner.png", "caption": "The Green gunner at the edge of the forest" },
