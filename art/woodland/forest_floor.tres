@@ -1,0 +1,9 @@
+[gd_resource type="ShaderMaterial" load_steps=3 format=3]
+
+[ext_resource type="Shader" path="res://art/woodland/forest_floor.gdshader" id="Floor"]
+[ext_resource type="Texture2D" path="res://art/woodland/floor_noise.tres" id="Mottling"]
+
+[resource]
+shader = ExtResource("Floor")
+shader_parameter/mottling = ExtResource("Mottling")
+

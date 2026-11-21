@@ -1,0 +1,8 @@
+{
+  "thumbnail": "screenshots/gunner.png",
+  "gallery": [
+    { "image": "screenshots/gunner.png", "caption": "The Green gunner at the edge of the forest" },
+    { "image": "screenshots/observer.png", "caption": "The forward observer scouting through binoculars" },
+    { "image": "screenshots/figures.png", "caption": "Plastic riflemen in motion" }
+  ]
+}
