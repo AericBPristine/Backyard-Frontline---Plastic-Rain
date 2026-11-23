@@ -52,13 +52,14 @@ const COVER_POSITIONS := [
 	[Vector2(-27, -438), Vector2(8, -393), Vector2(36, -461)],
 	[Vector2(-32, -304), Vector2(0, -345), Vector2(22, -286)],
 ]
-const AIM_WIDTH_STEP := 1.55
-const AIM_BASE_DISTANCE := 70.0
-const AIM_DEPTH_STEP := 7.65
-const MILS_PER_TURN := 6400
-const AZIMUTH_MILS_PER_STEP := 10
-const ELEVATION_MILS_AT_ZERO := 480
-const ELEVATION_MILS_PER_STEP := 12
+const MORTAR_AIM := preload("res://art/figures/mortar_aim.gd")
+const AIM_WIDTH_STEP := MORTAR_AIM.AIM_WIDTH_STEP
+const AIM_BASE_DISTANCE := MORTAR_AIM.AIM_BASE_DISTANCE
+const AIM_DEPTH_STEP := MORTAR_AIM.AIM_DEPTH_STEP
+const MILS_PER_TURN := MORTAR_AIM.MILS_PER_TURN
+const AZIMUTH_MILS_PER_STEP := MORTAR_AIM.AZIMUTH_MILS_PER_STEP
+const ELEVATION_MILS_AT_ZERO := MORTAR_AIM.ELEVATION_MILS_AT_ZERO
+const ELEVATION_MILS_PER_STEP := MORTAR_AIM.ELEVATION_MILS_PER_STEP
 const IMPACT_VIEW_SECONDS := 2.5
 const ROUND_ROLL_SPEED := TAU / 4.0
 const SHOT_INTERVAL_SECONDS := 3.0
@@ -206,6 +207,8 @@ var observer_radio: OBSERVER_RADIO
 var sniper_audio: AudioStreamPlayer
 var sniper_cycle_audio: AudioStreamPlayer
 var gunner_first_person := false
+var gunner_correction := ""
+var gunner_correction_detail := ""
 var observer_first_person := true
 var observer_hop_left := 0.0
 var observer_kneeling := false
@@ -946,6 +949,8 @@ func clear_battlefield() -> void:
 	projectile_audio.stop_all()
 	sniper_view.clear()
 	observer_radio.clear()
+	gunner_correction = ""
+	gunner_correction_detail = ""
 	for entry in actors.get_children():
 		actors.remove_child(entry)
 		entry.queue_free()
@@ -1133,10 +1138,10 @@ func start_wave() -> void:
 	hud.announce_wave(wave, false)
 
 func azimuth_mils(value: float) -> int:
-	return posmod(roundi(value * AZIMUTH_MILS_PER_STEP), MILS_PER_TURN)
+	return posmod(MORTAR_AIM.signed_azimuth_mils(value), MILS_PER_TURN)
 
 func elevation_mils(value: float) -> int:
-	return ELEVATION_MILS_AT_ZERO + roundi(value * ELEVATION_MILS_PER_STEP)
+	return MORTAR_AIM.elevation_mils(value)
 
 func update_barrel() -> void:
 	var yaw := -heading * AZIMUTH_MILS_PER_STEP * TAU / MILS_PER_TURN
@@ -1225,10 +1230,18 @@ func fire() -> void:
 		press_mortar(airburst_selected)
 
 func queue_radio_round() -> bool:
+	if coop.in_match():
+		return false
 	if not mortar_ready():
 		return false
 	press_mortar(false)
 	return true
+
+func publish_gunner_correction(detail: String) -> void:
+	if not coop.in_match() or not coop.host or not observer_radio.has_target:
+		return
+	var shift: Vector2i = MORTAR_AIM.human_gunner_correction(observer_radio.target, heading, elevation)
+	coop.publish_mil_correction(MORTAR_AIM.format_correction(shift.x, shift.y), detail)
 
 func cancel_pending_radio_round() -> void:
 	trigger_time = 0.0
@@ -1254,7 +1267,7 @@ func release_shot() -> void:
 			airburst_selected = false
 
 	var radio_order := 0
-	var target := Vector3(heading * AIM_WIDTH_STEP, 0.3, -AIM_BASE_DISTANCE - elevation * AIM_DEPTH_STEP)
+	var target := MORTAR_AIM.impact_for_aim(heading, elevation)
 	if radio_round:
 		var point := observer_radio.round_target()
 		target = Vector3(point.x, 0.3, point.y)
@@ -2227,6 +2240,11 @@ func finish_defense(won: bool) -> void:
 	sniper.clear()
 	observer_radio.clear()
 	hud.close_radio_entry()
+	if coop.in_match() and coop.host:
+		coop.publish_mil_correction("", "")
+	else:
+		gunner_correction = ""
+		gunner_correction_detail = ""
 	trigger_time = 0.0
 	if not follow.has("hold"):
 		stop_following()

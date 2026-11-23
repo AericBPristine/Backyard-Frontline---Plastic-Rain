@@ -439,6 +439,65 @@ func show_impact(number: int, point: Vector3, airburst: bool) -> void:
 	if guest_match() and match_number == number:
 		game.paint_impact(point, airburst, false)
 
+func player_with_role(role: int) -> int:
+	for id: int in players:
+		if int(players[id].get("role", -1)) == role:
+			return id
+	return 0
+
+func send_observer_call(call: String, from_voice: bool) -> void:
+	if guest_match() and local_role() == Role.OBSERVER and not call.is_empty() and call.length() <= 160:
+		observer_call.rpc_id(1, match_number, call, from_voice)
+
+@rpc("any_peer", "reliable")
+func observer_call(number: int, call: String, from_voice: bool) -> void:
+	if not allowed_remote(number, Role.OBSERVER) or call.is_empty() or call.length() > 160:
+		return
+	if "\n" in call or "\r" in call:
+		return
+	game.observer_radio.execute_call(call, from_voice)
+
+func publish_mil_correction(mils: String, detail: String) -> void:
+	if not host or not in_match():
+		return
+	var gunner_id := player_with_role(Role.GUNNER)
+	if gunner_id == 0:
+		return
+	if gunner_id == multiplayer.get_unique_id():
+		game.gunner_correction = mils
+		game.gunner_correction_detail = detail
+	else:
+		receive_mil_correction.rpc_id(gunner_id, match_number, mils, detail)
+
+@rpc("authority", "reliable")
+func receive_mil_correction(number: int, mils: String, detail: String) -> void:
+	if not guest_match() or number != match_number or local_role() != Role.GUNNER:
+		return
+	if mils.length() > 180 or detail.length() > 180:
+		return
+	game.gunner_correction = mils
+	game.gunner_correction_detail = detail
+
+func send_observer_readback(message: String, check: String) -> void:
+	if not host or not in_match():
+		return
+	if local_role() == Role.OBSERVER:
+		game.observer_radio.speak(message)
+		return
+	var observer_id := player_with_role(Role.OBSERVER)
+	if observer_id != 0:
+		receive_observer_readback.rpc_id(observer_id, match_number, message, check)
+
+@rpc("authority", "reliable")
+func receive_observer_readback(number: int, message: String, check: String) -> void:
+	if not guest_match() or number != match_number or local_role() != Role.OBSERVER:
+		return
+	if message.length() > 180 or check.length() > 80:
+		return
+	game.observer_radio.status = message
+	game.observer_radio.voice_input_check = check
+	game.observer_radio.speak(message)
+
 func send_launch(point: Vector3, direction: Vector3) -> void:
 	if host and in_match() and other_player():
 		show_launch.rpc_id(other_player(), match_number, point, direction)

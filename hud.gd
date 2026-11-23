@@ -65,6 +65,9 @@ var fire_button: Button
 var ride_button: Button
 var effect_button: Button
 var gunner_controls: Control
+var correction_panel: Control
+var correction_readout: Label
+var correction_detail: Label
 var observer_controls: Control
 var sniper_controls: Control
 var sniper_status: Label
@@ -171,6 +174,22 @@ func _ready() -> void:
 	airburst_button = button(gunner_controls, "Airburst", Vector2(889, 610), Vector2(160, 38), func(): game.set_airburst(true))
 	fire_button = button(gunner_controls, "Fire  [Space]", Vector2(1062, 610), Vector2(178, 38), game.fire)
 	crate_label = label(gunner_controls, "", Vector2(793, 665), 14, SOFT)
+
+	correction_panel = Control.new()
+	correction_panel.name = "GunnerCorrection"
+	correction_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	correction_panel.hide()
+	gunner_controls.add_child(correction_panel)
+	panel(correction_panel, Vector2(958, 312), Vector2(300, 148))
+	label(correction_panel, "CORRECTION", Vector2(974, 324), 14, ACCENT)
+	correction_readout = label(correction_panel, "", Vector2(974, 350), 18)
+	correction_readout.size = Vector2(268, 52)
+	correction_readout.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	correction_detail = label(correction_panel, "", Vector2(974, 406), 14, SOFT)
+	correction_detail.size = Vector2(268, 40)
+	correction_detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	correction_detail.max_lines_visible = 2
+	correction_detail.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 
 	panel(observer_controls, Vector2(811, 595), Vector2(447, 101))
 	observer_title = label(observer_controls, "GREEN OUTPOST", Vector2(829, 609), 15, ACCENT)
@@ -780,6 +799,10 @@ func sync(delta := 0.0) -> void:
 	greens_label.visible = not game.is_practice()
 	report_label.text = game.report
 	gunner_controls.visible = not game.observing and not game.sniper_mode
+	correction_readout.text = game.gunner_correction
+	correction_detail.text = game.gunner_correction_detail
+	correction_detail.visible = not game.gunner_correction_detail.is_empty()
+	correction_panel.visible = not game.gunner_correction.is_empty()
 	observer_controls.visible = game.observing and not game.sniper_mode
 	sniper_controls.visible = game.can_use_loadout() and not game.loadout_open
 	if sniper_controls.visible:
@@ -809,8 +832,7 @@ func sync(delta := 0.0) -> void:
 	binocular_mask.visible = game.binoculars_visible()
 	if game.binoculars_visible():
 		binocular_heading.text = "DIR %04d" % game.observer_radio.heading(game.observer_yaw)
-	binocular_heading.visible = not game.coop.in_match()
-	radio_panel.visible = game.observing and not game.sniper_mode and game.playing and not game.coop.in_match()
+	radio_panel.visible = game.observing and not game.sniper_mode and game.playing and not game.coop_controls_locked()
 	ride_button.visible = not game.coop.in_match()
 	effect_button.visible = not game.coop.in_match()
 	if radio_panel.visible:

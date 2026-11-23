@@ -58,7 +58,7 @@ func _ready() -> void:
 
 func active() -> bool:
 	return (game.playing and game.observing and not game.sniper_mode
-		and game.observer_available() and not get_tree().paused and not game.coop.in_match())
+		and game.observer_available() and not get_tree().paused and not game.coop_controls_locked())
 
 func busy() -> bool:
 	return not orders.is_empty() or not airborne.is_empty()
@@ -114,7 +114,7 @@ func submit_voice(transcripts: Array) -> void:
 				or (readable_correction(correction) and not correction.get_string(5).is_empty()):
 				call = alternate
 				break
-	execute_call(call, true)
+	dispatch_call(call, true)
 
 func normalize_voice_call(transcript: String) -> String:
 	var call := " " + normalize_call(transcript) + " "
@@ -133,16 +133,28 @@ func readable_correction(command: RegExMatch) -> bool:
 	return true
 
 func submit(transcript: String) -> void:
-	execute_call(normalize_call(transcript))
+	dispatch_call(normalize_call(transcript), false)
 
-func execute_call(call: String, from_voice := false) -> void:
+func dispatch_call(call: String, from_voice: bool) -> void:
 	if not active():
 		return
+	if game.coop.guest_match():
+		game.coop.send_observer_call(call, from_voice)
+		return
+	execute_call(call, from_voice)
+
+func execute_call(call: String, from_voice := false) -> void:
+	if not game.playing or not game.observer_available():
+		return
+	if game.coop.in_match():
+		voice_input_check = ""
 	if call in CHECK_FIRE_CALLS:
 		reset_mission()
 		reply("Check fire. Mission cleared.")
+		if game.coop.in_match() and game.coop.host:
+			game.coop.publish_mil_correction("Check fire. Mission cleared.", "")
 		return
-	if airborne.is_empty() and not orders.is_empty():
+	if not game.coop.in_match() and airborne.is_empty() and not orders.is_empty():
 		reply("Round waiting to launch.")
 		return
 	var coordinates := direction_call.search(call)
@@ -216,6 +228,12 @@ func on_map(point: Vector2) -> bool:
 	return maxf(edge.x, edge.y) < game.MAP_SIZE * 0.5 - 1.0
 
 func queue_rounds(count: int, readback: String) -> void:
+	if game.coop.in_match():
+		var sent := readback if readback.ends_with(".") else readback + "."
+		reply(sent + " Sent to the gunner.")
+		if game.coop.host:
+			game.publish_gunner_correction(readback)
+		return
 	order_number += 1
 	last_order = FireOrder.new(order_number, target, count)
 	orders.append(last_order)
@@ -230,7 +248,7 @@ func start_readback_delay() -> void:
 	readback_deadline = 5.0
 
 func advance(delta: float) -> void:
-	if orders.is_empty() or pending:
+	if game.coop.in_match() or orders.is_empty() or pending:
 		return
 	readback_left = maxf(0.0, readback_left - delta)
 	readback_deadline = maxf(0.0, readback_deadline - delta)
@@ -282,6 +300,12 @@ func landed(id: int) -> void:
 
 func reply(message: String) -> void:
 	status = message
+	if game.coop.in_match() and game.coop.host:
+		game.coop.send_observer_readback(message, voice_input_check)
+		return
+	speak(message)
+
+func speak(message: String) -> void:
 	if game.observing and DisplayServer.get_name() != "headless":
 		var voices := DisplayServer.tts_get_voices_for_language("en")
 		if not voices.is_empty():
