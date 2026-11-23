@@ -2,7 +2,8 @@ extends RefCounted
 
 const RIDGE_STEPS := 112
 
-static func build(world: Node3D, map_center: Vector3, map_size: float, floor_material: ShaderMaterial) -> void:
+static func build(world: Node3D, map_center: Vector3, map_size: float, floor_material: ShaderMaterial,
+		open_fields := false, practice_field := false) -> void:
 	var half := map_size * 0.5
 	const OUTER_GROUND := 1450.0
 	var skirt_width := OUTER_GROUND - half
@@ -11,31 +12,35 @@ static func build(world: Node3D, map_center: Vector3, map_size: float, floor_mat
 	ground_strip(world, map_center + Vector3(0, 0, skirt_mid), Vector2(OUTER_GROUND * 2.0, skirt_width), floor_material)
 	for side in [-1.0, 1.0]:
 		ground_strip(world, map_center + Vector3(side * skirt_mid, 0, 0), Vector2(skirt_width, map_size), floor_material)
-	add_ridgeline(world, map_center, Vector3(810, 1090, 1440), 310.0, Color("#8ab2cd"), Color("#688eb4"), 50)
-	add_ridgeline(world, map_center, Vector3(540, 740, 1100), 182.0, Color("#749da4"), Color("#557b8d"), 119)
-	add_ridgeline(world, map_center, Vector3(535, 586, 685), 35.0, Color("#7e9d86"), Color("#567f79"), 243)
+	var ridge_scale := 0.64 if open_fields else 1.0
+	var round_east := not practice_field
+	add_ridgeline(world, map_center, Vector3(810, 1090, 1440), 310.0 * ridge_scale, Color("#7d8c94"), Color("#687882"), 50, round_east)
+	add_ridgeline(world, map_center, Vector3(540, 740, 1100), 182.0 * ridge_scale, Color("#6c8084"), Color("#506770"), 119, round_east)
+	add_ridgeline(world, map_center, Vector3(535, 586, 685), 35.0 * ridge_scale, Color("#71837b"), Color("#556966"), 243, round_east)
+	if practice_field:
+		return
 
 	var north_trees: Array[Transform3D] = []
 	var valley_trees: Array[Transform3D] = []
 	var random := RandomNumberGenerator.new()
 	random.seed = 13978
-	for row in range(4):
-		for column in range(79):
+	for row in range(1 if open_fields else 4):
+		for column in range(0, 79, 3 if open_fields else 1):
 			var x := -351.0 + column * 9.0 + random.randf_range(-3.8, 3.8)
 			if absf(x + 28.0) < 7.0 or absf(x) < 6.0 or absf(x - 29.0) < 7.0:
 				continue
 			var z := -half + 4.6 + row * 6.5 + random.randf_range(-2.5, 2.5)
 			var height := random.randf_range(8.0, 19.0)
 			north_trees.append(pine_transform(map_center + Vector3(x, 0, z), height, random.randf() * TAU))
-	for index in range(375):
+	for index in range(77 if open_fields else 375):
 		var angle := random.randf() * TAU
 		var direction := Vector2(cos(angle), sin(angle))
 		var map_edge := half / maxf(absf(direction.x), absf(direction.y))
 		var distance := map_edge + random.randf_range(8.0, 62.0)
 		var at := map_center + Vector3(direction.x * distance, -0.04, direction.y * distance)
 		valley_trees.append(pine_transform(at, random.randf_range(8.0, 21.0), random.randf() * TAU))
-	add_pines(world, north_trees, Color("#527968"))
-	add_pines(world, valley_trees, Color("#749b88"))
+	add_pines(world, north_trees, Color("#527968"), "North Tree Line")
+	add_pines(world, valley_trees, Color("#749b88"), "Far Pines")
 
 static func ground_strip(world: Node3D, center: Vector3, size: Vector2, material: ShaderMaterial) -> void:
 	var tile := PlaneMesh.new()
@@ -48,7 +53,7 @@ static func ground_strip(world: Node3D, center: Vector3, size: Vector2, material
 	world.add_child(strip)
 
 static func add_ridgeline(world: Node3D, center: Vector3, rings: Vector3,
-		height: float, valley: Color, summit: Color, seed: int) -> void:
+		height: float, valley: Color, summit: Color, seed: int, round_east: bool) -> void:
 	var noise := FastNoiseLite.new()
 	noise.seed = seed
 	noise.frequency = 0.016
@@ -64,6 +69,11 @@ static func add_ridgeline(world: Node3D, center: Vector3, rings: Vector3,
 			var folds := noise.get_noise_2dv(axis * 680.0 + Vector2(24, 53))
 			var peak := clampf(0.46 + dome * 0.52 + absf(folds) * 0.28, 0.11, 1.0)
 			var radial := rings.y + dome * 42.0 + folds * 21.0
+			if round_east:
+				var east := smoothstep(0.08, 0.50, axis.x)
+				var broad := noise.get_noise_2dv(axis * 124.0)
+				peak = lerpf(peak, (0.51 + broad * 0.46) * 0.60, east)
+				radial = lerpf(radial, rings.y + broad * 42.0, east)
 			if coordinates.size() < 2:
 				radial = lerpf(rings.x, radial, coordinates.size() * 0.5)
 			elif coordinates.size() > 2:
@@ -99,7 +109,7 @@ static func add_ridgeline(world: Node3D, center: Vector3, rings: Vector3,
 static func pine_transform(at: Vector3, height: float, turn: float) -> Transform3D:
 	return Transform3D(Basis(Vector3.UP, turn).scaled(Vector3.ONE * height), at)
 
-static func add_pines(world: Node3D, transforms: Array[Transform3D], color: Color) -> void:
+static func add_pines(world: Node3D, transforms: Array[Transform3D], color: Color, label: String) -> void:
 	var pine := SurfaceTool.new()
 	pine.begin(Mesh.PRIMITIVE_TRIANGLES)
 	for tier in range(3):
@@ -130,7 +140,7 @@ static func add_pines(world: Node3D, transforms: Array[Transform3D], color: Colo
 	for index in range(transforms.size()):
 		instances.set_instance_transform(index, transforms[index])
 	var forest := MultiMeshInstance3D.new()
-	forest.name = "Far Pines"
+	forest.name = label
 	forest.multimesh = instances
 	forest.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	world.add_child(forest)
@@ -140,8 +150,8 @@ static func add_valley_boulders(world: Node3D, ground_height: Callable) -> void:
 	random.seed = 72193
 	var clusters: Array[Vector2] = [
 		Vector2(-74, -143), Vector2(60, -169), Vector2(-67, -258), Vector2(79, -258),
-		Vector2(62, -315), Vector2(-81, -335), Vector2(93, -366), Vector2(-62, -410),
-		Vector2(64, -446), Vector2(-90, -476), Vector2(73, -509), Vector2(-60, -537),
+		Vector2(62, -315), Vector2(-81, -335), Vector2(111, -368), Vector2(-62, -410),
+		Vector2(64, -446), Vector2(-166, -476), Vector2(73, -509), Vector2(-60, -537),
 		Vector2(86, -573), Vector2(-73, -603), Vector2(67, -641), Vector2(-91, -665),
 		Vector2(98, -683), Vector2(-57, -696),
 	]

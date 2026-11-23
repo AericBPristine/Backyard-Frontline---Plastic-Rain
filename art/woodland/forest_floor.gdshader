@@ -6,23 +6,23 @@ uniform vec3 moss : source_color = vec3(0.286, 0.365, 0.188);
 uniform vec3 grass : source_color = vec3(0.344, 0.423, 0.235);
 uniform vec3 earth : source_color = vec3(0.259, 0.233, 0.157);
 uniform vec3 grit : source_color = vec3(0.494, 0.458, 0.335);
-uniform vec3 track_earth : source_color = vec3(0.402, 0.351, 0.252);
-uniform vec2 track_center = vec2(-5.0, -296.0);
-uniform float track_half_length = 176.5;
-uniform float track_half_width = 2.75;
+uniform sampler2D surface_map : filter_linear_mipmap, repeat_disable;
+uniform vec2 surface_center = vec2(0.0, -359.0);
+uniform float surface_size = 750.0;
+uniform vec3 track_earth : source_color = vec3(0.405, 0.344, 0.257);
 uniform bool crater_surface = false;
 uniform int crater_count = 0;
 uniform vec3 crater_cutouts[24];
 
-varying vec2 ground_position;
+varying vec3 ground_position;
 
 void vertex() {
 	vec3 world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	ground_position = world.xz;
+	ground_position = world.xyz;
 }
 
 void fragment() {
-	vec2 p = ground_position;
+	vec2 p = ground_position.xz;
 	vec2 from_impact = (UV - vec2(0.5)) * 3.7;
 	float crater_radius = length(from_impact);
 	if (crater_surface) {
@@ -39,16 +39,17 @@ void fragment() {
 	}
 	float broad = texture(mottling, p * 0.013 + vec2(0.15, 0.37)).r;
 	float broken = texture(mottling, p * 0.075).r;
-	vec2 track = p - track_center;
-	float track_edge = abs(track.x + track.y * 0.035 + (broken - 0.5) * 2.3);
-	float wear = (1.0 - smoothstep(track_half_width - 0.8, track_half_width + 0.65, track_edge));
-	wear *= 1.0 - smoothstep(track_half_length - 5.0, track_half_length, abs(track.y));
+	vec2 surface_uv = (p - surface_center) / surface_size + vec2(0.5);
+	vec2 marks = texture(surface_map, surface_uv).rg;
+	float wear = smoothstep(0.06, 0.90, marks.r + (broken - 0.52) * min(0.35, marks.r));
 	float patches = broad * 0.67 + broken * 0.33;
 	vec3 green = mix(moss, grass, smoothstep(0.28, 0.73, patches));
 	float soil_amount = 1.0 - smoothstep(0.37, 0.58, patches);
 	float clearing = 1.0 - smoothstep(3.6, 8.0, length((p - vec2(1.0, -1.8)) * vec2(1.0, 0.86)) + (broken - 0.5) * 3.5);
 	soil_amount = max(soil_amount, clearing * 0.82);
-	vec3 ground = mix(mix(green, earth, soil_amount * 0.88), track_earth, wear * 0.92);
+	vec3 dirt = track_earth * (0.86 + 0.22 * broken);
+	vec3 ground = mix(mix(green, earth, soil_amount * 0.88), dirt, wear * 0.94);
+	ground = mix(ground, earth * (0.70 + broad * 0.31), marks.g * 0.92);
 
 	float distance_to_camera = distance(p, CAMERA_POSITION_WORLD.xz);
 	float detail_fade = 1.0 - smoothstep(32.0, 105.0, distance_to_camera);
@@ -74,6 +75,14 @@ void fragment() {
 		streak *= smoothstep(0.27, 0.59, grain);
 		ground = mix(ground, earth * (0.64 + grain * 0.37), streak * 0.85);
 	}
+
+	// Exposed stone is confined to the steep slopes of the eastern range.
+	float east = smoothstep(118.0, 168.0, p.x) * smoothstep(13.0, 30.0, ground_position.y);
+	vec3 world_normal = normalize(mat3(INV_VIEW_MATRIX) * NORMAL);
+	float steep = 1.0 - world_normal.y;
+	float stone = smoothstep(0.17, 0.49, steep + (broken - 0.50) * 0.26);
+	vec3 rock = mix(vec3(0.225, 0.238, 0.220), vec3(0.385, 0.386, 0.342), patches);
+	ground = mix(ground, rock * mix(0.89, 1.12, grain * detail_fade), east * stone * 0.86);
 
 	float aerial = smoothstep(12.0, 95.0, CAMERA_POSITION_WORLD.y);
 	ALBEDO = ground * mix(0.77, 0.54, aerial);
